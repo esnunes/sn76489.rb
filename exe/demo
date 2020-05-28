@@ -1,0 +1,116 @@
+#!/usr/bin/env ruby -w
+
+lib = File.expand_path('../lib', __dir__)
+$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
+require 'sn76489'
+require 'ffi'
+
+module SDL2
+  extend FFI::Library
+  ffi_lib 'SDL2'
+
+  INIT_AUDIO = 0x00000010
+
+  AUDIO_S8 = 0x8008 # signed 8-bit samples
+  AUDIO_S16LSB = 0x8010 # signed 16-bit samples
+  AUDIO_S16 = AUDIO_S16LSB
+
+  class AudioSpec < FFI::Struct
+    layout(
+      :freq, :int,
+      :format, :uint16,
+      :channels, :uint8,
+      :silence, :uint8,
+      :samples, :uint16,
+      :padding, :uint16,
+      :size, :uint32,
+      :callback, :pointer,
+      :userdata, :pointer
+    )
+  end
+
+  def self.audio_callback(blk)
+    FFI::Function.new(:void, %i[pointer pointer int], blk)
+  end
+
+  functions = {
+    init_sub_system: [:SDL_InitSubSystem, [:uint32], :int],
+    quit_sub_system: [:SDL_QuitSubSystem, [:uint32], :void, blocking: true],
+    get_error: [:SDL_GetError, [], :string],
+    delay: [:SDL_Delay, [:int], :void, blocking: true],
+
+    open_audio_device: [
+      :SDL_OpenAudioDevice,
+      [:string, :int, AudioSpec.ptr, AudioSpec.ptr, :int],
+      :uint32,
+      blocking: true,
+    ],
+    pause_audio_device: [
+      :SDL_PauseAudioDevice,
+      [:uint32, :int], :void,
+      blocking: true,
+    ],
+    close_audio_device: [
+      :SDL_CloseAudioDevice,
+      [:uint32], :void,
+      blocking: true,
+    ],
+    queue_audio: [:SDL_QueueAudio, [:uint32, :pointer, :int], :int],
+    queued_audio_size: [:SDL_GetQueuedAudioSize, [:uint32], :uint32],
+    clear_queued_audio: [:SDL_ClearQueuedAudio, [:uint32], :void],
+  }
+
+  functions.each { |name, params| attach_function(name, *params) }
+end
+
+begin
+  SDL2.init_sub_system(SDL2::INIT_AUDIO)
+
+  audio_spec = SDL2::AudioSpec.new
+  audio_spec[:freq] = 44100 # sample rate
+  audio_spec[:format] = SDL2::AUDIO_S16
+  audio_spec[:channels] = 1
+  audio_spec[:samples] = 512
+  audio_spec[:callback] = nil
+  audio_spec[:userdata] = nil
+
+  audio_device_id = SDL2.open_audio_device(nil, 0, audio_spec, nil, 0)
+  if audio_device_id.zero?
+    puts "failed to open audio device: #{SDL2.get_error}"
+    abort
+  end
+
+  SDL2.pause_audio_device(audio_device_id, 0) # unpause
+
+  chip = SN76489::Chip.new
+
+  song_thr = Thread.new do
+    sleep(1.0) # fill buffer
+    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_MAX)
+    chip.set_volume(channel: 1, value: SN76489::Chip::VOL_MAX)
+    chip.set_tone(channel: 0, freq: 440)
+    chip.set_tone(channel: 1, freq: 220)
+    sleep(2.0)
+    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_MUTE)
+    sleep(1.0)
+    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_TABLE[3])
+    sleep(3.0)
+  end
+
+  sample = nil
+  t1 = Time.now
+  loop do
+    break unless song_thr.alive?
+
+    SDL2.delay(1000 / 60) # 60 fps
+
+    ticks = (44100 * (Time.now - t1).to_f).to_i + 1
+    t1 = Time.now
+    sample = chip.tick(ticks).pack('s*')
+    SDL2.queue_audio(audio_device_id, sample, sample.bytesize)
+  end
+ensure
+  SDL2.close_audio_device(audio_device_id) unless audio_device_id.zero?
+  SDL2.quit_sub_system(SDL2::INIT_AUDIO)
+end

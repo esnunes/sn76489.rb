@@ -1,0 +1,16 @@
+inherit_from:
+  - http://shopify.github.io/ruby-style-guide/rubocop.yml
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+# Style/ClassAndModuleChildren:
+#   Enabled: false
+# Style/RedundantBegin:
+#   Enabled: false
+
+# AllCops:
+#   TargetRubyVersion: 2.5
+#   DisplayCopNames: true
+#   DisplayStyleGuide: true
+#   Exclude:
+#     - node_modules/**/*
