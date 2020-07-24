@@ -71,7 +71,7 @@ begin
   audio_spec[:freq] = 44100 # sample rate
   audio_spec[:format] = SDL2::AUDIO_S16
   audio_spec[:channels] = 1
-  audio_spec[:samples] = 512
+  audio_spec[:samples] = 4096
   audio_spec[:callback] = nil
   audio_spec[:userdata] = nil
 
@@ -86,7 +86,6 @@ begin
   chip = SN76489::Chip.new
 
   song_thr = Thread.new do
-    sleep(1.0) # fill buffer
     chip.set_volume(channel: 0, value: SN76489::Chip::VOL_MAX)
     chip.set_volume(channel: 1, value: SN76489::Chip::VOL_MAX)
     chip.set_tone(channel: 0, freq: 440)
@@ -105,7 +104,10 @@ begin
 
     SDL2.delay(1000 / 60) # 60 fps
 
-    ticks = (44100 * (Time.now - t1).to_f).to_i + 1
+    ticks = (44100 * (Time.now - t1).to_f).to_i
+    # add 5 ms buffer if needed
+    ticks = [3675, ticks].max if SDL2.queued_audio_size(audio_device_id) < 3675
+
     t1 = Time.now
     sample = chip.tick(ticks).pack('s*')
     SDL2.queue_audio(audio_device_id, sample, sample.bytesize)
