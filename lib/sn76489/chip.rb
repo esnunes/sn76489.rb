@@ -15,8 +15,8 @@ module SN76489
       32767, 26028, 20675, 16422, 13045, 10362, 8231, 6568, 5193, 4125, 3277,
       2603, 2067, 1642, 1304, 0,
     ]
-    VOL_MAX = VOL_TABLE.first
-    VOL_MUTE = VOL_TABLE.last
+    VOL_MAX = VOL_TABLE.size - 1
+    VOL_MUTE = 0
 
     attr_reader :regs
     attr_reader :clock
@@ -78,10 +78,10 @@ module SN76489
       end
     end
 
-    def set_volume(channel:, value:)
+    def set_volume(channel:, level:)
       byte = 0b1001_0000
       byte |= channel << 5
-      byte |= VOL_TABLE.index(value)
+      byte |= (0xf - level) & 0xf
       write(byte)
     end
 

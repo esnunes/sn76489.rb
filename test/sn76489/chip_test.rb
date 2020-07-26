@@ -90,7 +90,7 @@ module SN76489
     def test_set_volume
       @chip.expects(:write).with(0b1101_1111)
 
-      @chip.set_volume(channel: 2, value: Chip::VOL_MUTE)
+      @chip.set_volume(channel: 2, level: Chip::VOL_MUTE)
     end
 
     def test_set_tone
