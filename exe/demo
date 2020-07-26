@@ -86,15 +86,23 @@ begin
   chip = SN76489::Chip.new
 
   song_thr = Thread.new do
-    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_MAX)
-    chip.set_volume(channel: 1, value: SN76489::Chip::VOL_MAX)
+    chip.set_volume(channel: 0, level: SN76489::Chip::VOL_MAX)
+    chip.set_volume(channel: 1, level: SN76489::Chip::VOL_MAX)
     chip.set_tone(channel: 0, freq: 440)
     chip.set_tone(channel: 1, freq: 220)
     sleep(2.0)
-    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_MUTE)
+    chip.set_volume(channel: 0, level: SN76489::Chip::VOL_MUTE)
     sleep(1.0)
-    chip.set_volume(channel: 0, value: SN76489::Chip::VOL_TABLE[3])
-    sleep(3.0)
+    4.times do |i|
+      (10..15).each do |j|
+        chip.set_volume(channel: 0, level: j)
+        sleep(0.1)
+      end
+      (11..14).reverse_each do |j|
+        chip.set_volume(channel: 0, level: j)
+        sleep(0.1)
+      end
+    end
   end
 
   sample = nil
