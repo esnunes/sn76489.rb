@@ -86,6 +86,21 @@ begin
   chip = SN76489::Chip.new
 
   song_thr = Thread.new do
+    chip.set_volume(channel: 3, level: SN76489::Chip::VOL_MAX)
+    # chip.set_noise(type: SN76489::Chip::NOISE_PERIODIC, clock: SN76489::Chip::NOISE_CLOCK_CH_2)
+    # chip.set_noise(type: SN76489::Chip::NOISE_WHITE, clock: SN76489::Chip::NOISE_CLOCK_CH_2)
+    chip.set_noise(type: SN76489::Chip::NOISE_WHITE, clock: SN76489::Chip::NOISE_CLOCK_LOW)
+    sleep(2.0)
+    chip.set_noise(type: SN76489::Chip::NOISE_WHITE, clock: SN76489::Chip::NOISE_CLOCK_MEDIUM)
+    sleep(2.0)
+    chip.set_noise(type: SN76489::Chip::NOISE_WHITE, clock: SN76489::Chip::NOISE_CLOCK_HIGH)
+    sleep(2.0)
+    chip.set_tone_hz(channel: 2, hz: 1)
+    chip.set_noise(type: SN76489::Chip::NOISE_WHITE, clock: SN76489::Chip::NOISE_CLOCK_CH_2)
+    (0x001..0x100).each do |i|
+      chip.set_tone_hz(channel: 2, hz: i)
+      sleep(0.1)
+    end
     chip.set_volume(channel: 0, level: SN76489::Chip::VOL_MAX)
     chip.set_volume(channel: 1, level: SN76489::Chip::VOL_MAX)
     chip.set_tone(channel: 0, freq: 440)

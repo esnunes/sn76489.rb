@@ -1,9 +1,5 @@
 # SN76489 chip emulator
 
-## TODO
-
-- [ ] Noise Generator
-
 ## Tests
 
 ``` shell
