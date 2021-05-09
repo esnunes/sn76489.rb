@@ -1,0 +1,269 @@
+#!/usr/bin/env ruby
+
+require 'bundler/setup'
+require 'ffi'
+require 'sdl2'
+
+SDL2.load_lib('SDL2')
+
+module SDL2
+  SDL_AUDIO_S16LSB = 0x8010
+  SDL_AUDIO_S16 = SDL_AUDIO_S16LSB
+end
+
+class AudioDevice  
+  def self.open(freq: 44100, samples: 1024)
+    new(freq: freq, samples: samples).tap { |a| a.open }
+  end
+  
+  def initialize(freq: 44100, samples: 1024)
+    @spec = SDL2::SDL_AudioSpec.new
+    @spec[:freq] = freq
+    @spec[:samples] = samples
+    @spec[:format] = SDL2::SDL_AUDIO_S16
+    @spec[:channels] = 1
+
+    @device_id = 0
+  end
+
+  def open
+    SDL2.SDL_InitSubSystem(SDL2::SDL_INIT_AUDIO)
+    
+    @device_id = SDL2.SDL_OpenAudioDevice(nil, 0, @spec, nil, 0)
+    raise "failed to open audio device: #{SDL2.SDL_GetError}" if @device_id.zero?
+  end
+
+  def close
+    SDL2.SDL_CloseAudioDevice(@device_id) unless @device_id.zero?
+  end
+
+  def pause
+    SDL2.SDL_PauseAudioDevice(@device_id, 1)
+  end
+
+  def resume
+    SDL2.SDL_PauseAudioDevice(@device_id, 0)
+  end
+
+  def queued_audio_size
+    SDL2.SDL_GetQueuedAudioSize(@device_id)
+  end
+
+  def queue_audio(pointer, size)
+    SDL2.SDL_QueueAudio(@device_id, pointer, size)
+  end
+
+  def freq
+    @spec[:freq]
+  end
+
+  def samples
+    @spec[:samples]
+  end
+
+  def queue_drained?
+    queued_audio_size < samples
+  end    
+end
+
+# every clock has a frequency and a tick size
+# when syncing, find the smallest increment, and iterate over it, calling tick of other clocks based on this
+# create a separate library for this
+class Clock
+  def initialize(freq:)
+    @freq = freq
+    @cycle = 0.0
+    @multiplier = 0.0
+    @block = nil
+    @overflow = 0.0
+  end
+
+  def tick(cycles)
+    if @overflow > cycles
+      @overflow -= cycles
+      cycles = 0.0
+    else
+      cycles -= @overflow
+      @overflow = 0.0
+    end
+
+    return if cycles.zero?
+
+    @overflow = @block ? @block.call(@cycle, cycles) - cycles : 0
+    @cycle += cycles + @overflow
+
+    # sync clocks
+  end
+
+  def sync(clock)
+    multiplier = clock.freq / @freq
+    @multiplier = multiplier if @multiplier < multiplier
+    @clocks << { multiplier: multiplier, clock: clock }
+  end
+
+  def watch(&block)
+    @block = block
+  end
+end
+
+# create an oscillator at frequence 4*60 = 240 times per second (240Hz)
+# the audio clock ticks 60 times per second, every tick has 735 cycles
+class Oscillator
+  def initialize(audio_device:, freq:)
+    @audio_device = audio_device
+    @clock = Clock.new(freq: audio_device.freq / audio_device.samples)
+    # @desired_freq = freq
+
+    real_freq = audio_device.freq / audio_device.samples
+    @multiplier = clock.freq / real_freq
+  end
+
+  def start
+    loop do
+      next unless @audio_device.queue_drained?
+
+      @clock.tick
+    end
+  end
+  
+  def asdf
+    return unless queue_drained?
+  end
+  
+  def resonate
+    @audio_device.resume
+
+    @c = 0
+    loop do
+      next if audio_buffer_full?
+
+      clocks.each { |clock| clock.tick(seconds: 1/60.0) }
+      @c += 1
+      exit if @c == 60 * 3
+    end
+  end
+
+  def add_listener(listener)
+  end
+
+  private
+
+  def should_resonate?
+    @audio_device.queued_audio_size > @audio_device.samples
+  end
+end
+
+class Clock
+  def initialize(hz:)
+    @hz = hz
+    @cycle = 0.0
+  end
+
+  def tick(seconds:)
+    @cycle += @hz * seconds
+    @watch.call(@cycle)
+  end
+
+  def watch(&block)
+    @watch = block
+  end
+end
+
+class ClockEngine
+  def initialize(audio_device:)
+    @audio_device = audio_device
+  end
+
+  def run(*clocks)
+    @audio_device.resume
+
+    @c = 0
+    loop do
+      next if audio_buffer_full?
+      
+      clocks.each { |clock| clock.tick(seconds: 1/60.0) }
+      @c += 1
+      exit if @c == 60 * 3
+    end
+  end
+
+  private
+
+  def audio_buffer_full?
+    @audio_device.queued_audio_size > @audio_device.samples
+  end
+end
+
+# ntsc
+# - crystal clock = 53693175.0000 Hz
+# - system clock  =  3579545.0000 Hz (crystal clock / 15)
+# - audio clock   =   223721.5625 Hz (system clock / 16)
+# - video clock   =  4024320.0000 Hz 
+
+# - system clock = 3579545 Hz
+# - audio sample rate = 44100
+# - display fps = 60
+
+class AudioDriver
+  TWO_PI = 2 * Math::PI
+  
+  def initialize(audio_device:)
+    @audio_device = audio_device
+    
+    @delta = 440.0 / @audio_device.freq
+    @cycle = 0
+  end
+  
+  def tick(_)
+    # move to this method the logic to decide how many samples
+    sample = (Math.sin(@cycle * TWO_PI) * 0x7fff).to_i
+    @cycle += @delta
+    sample
+  end
+end
+
+begin
+  FPS = 60
+  SAMPLE_RATE = 44100
+  AUDIO_BUFFER_SIZE = SAMPLE_RATE / FPS
+  SYSTEM_CLOCK_HZ = 3579545
+  AUDIO_CLOCK_HZ = SYSTEM_CLOCK_HZ / 16.0
+
+  audio_device = AudioDevice.open(freq: SAMPLE_RATE, samples: AUDIO_BUFFER_SIZE)
+  audio_driver = AudioDriver.new(audio_device: audio_device)
+
+  clock_engine = ClockEngine.new(audio_device: audio_device)
+
+  system_clock = Clock.new(hz: SYSTEM_CLOCK_HZ)
+  system_clock.watch do |cycle|
+    p "system_clock cycle [#{cycle}]"
+  end
+
+  audio_cycles_per_sample = AUDIO_CLOCK_HZ / SAMPLE_RATE
+  audio_cycle = 0
+  audio_clock = Clock.new(hz: AUDIO_CLOCK_HZ)
+  audio_clock.watch do |cycle|
+    delta = cycle.ceil - audio_cycle
+    next if delta <= 0
+    p "audio_clock cycle [#{cycle}]"
+
+    samples = (delta / audio_cycles_per_sample).ceil
+    next if samples == 0
+
+    audio_cycle += delta
+    
+    p "audio_clock samples [#{samples}]"
+
+    buf = Array.new(samples) do
+      audio_driver.tick(audio_cycles_per_sample)
+    end
+    data = buf.pack('s*')
+
+    audio_device.queue_audio(data, data.size)
+  end
+  
+  clock_engine.run(system_clock, audio_clock)
+ensure
+  audio_device.close unless audio_device.nil?
+  SDL2.SDL_QuitSubSystem(SDL2::SDL_INIT_AUDIO)
+end

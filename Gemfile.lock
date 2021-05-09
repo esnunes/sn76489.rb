@@ -24,6 +24,7 @@ GEM
     rubocop-ast (0.3.0)
       parser (>= 2.7.1.4)
     ruby-progressbar (1.10.1)
+    sdl2-bindings (0.0.4)
     simplecov (0.18.5)
       docile (~> 1.1)
       simplecov-html (~> 0.11)
@@ -38,6 +39,7 @@ DEPENDENCIES
   minitest
   mocha
   rubocop
+  sdl2-bindings
   simplecov
 
 BUNDLED WITH

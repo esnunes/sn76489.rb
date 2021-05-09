@@ -2,6 +2,29 @@
 
 module SN76489
   class Chip
+    class Oscillator
+      def initialize
+        @counter = 0
+        @length = 0
+        @next_length = 0
+      end
+
+      def length=(next_length)
+        @next_length = next_length
+      end
+
+      def tick(cycles = 1)
+        @counter += cycles
+        if @counter > @length
+          @prev_length = @length
+          @length = @next_length
+
+        end
+        @counter = @next_length if @counter.zero?
+
+      end
+    end
+
     CH_0_TONE = 0b000
     CH_0_VOL = 0b001
     CH_1_TONE = 0b010
@@ -27,11 +50,12 @@ module SN76489
     VOL_MUTE = 0
 
     attr_reader :regs
-    attr_reader :clock
+    # attr_reader :clock
 
-    def initialize(clock: 3579545, sample_rate: 44100)
-      @clock = clock
+    def initialize(system_clock: 3579545, sample_rate: 44100, divider: 16.0)
       @sample_rate = sample_rate
+      @divider = divider
+      @internal_clock = system_clock / divider
       @tick_size = clock / 16.0 / sample_rate
       @regs = Array.new(8) { 0 }
       @counters = Array.new(4) { -1 }
@@ -46,6 +70,7 @@ module SN76489
       @regs[CH_1_VOL] = 0xf
       @regs[CH_2_VOL] = 0xf
       @regs[NOISE_VOL] = 0xf
+      @cycle = 0
     end
 
     def write(byte)
@@ -65,6 +90,10 @@ module SN76489
           @regs[@latched_reg] = byte & 0x7
         end
       end
+    end
+
+    def step_to(system_cycle)
+      cycles = system_cycle - @cycle
     end
 
     def tick(length)
@@ -106,7 +135,7 @@ module SN76489
     end
 
     def set_tone(channel:, freq:)
-      hz = @clock / (32 * freq)
+      hz = @internal_clock / (2 * freq)
       set_tone_hz(channel: channel, hz: hz)
     end
 
